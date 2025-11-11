@@ -3,7 +3,6 @@ const fs = require('fs');
 const { NaiveBayesClassifier } = require('../src/model/nb_scratch');
 const { BaselineClassifier } = require('../src/model/baseline');
 
-// --- 1. Load Models and Test Data ---
 const MODELS_DIR = path.resolve(__dirname, '../models');
 const TEST_SET_PATH = path.resolve(MODELS_DIR, 'test_data.json');
 const NB_SCRATCH_PATH = path.resolve(MODELS_DIR, 'nb_scratch_model.json');
@@ -11,10 +10,10 @@ const BASELINE_PATH = path.resolve(MODELS_DIR, 'baseline_model.json');
 
 console.log('Loading test data and trained models...');
 
-// Load Test Set
-const { testDocs, testLabels } = JSON.parse(
-  fs.readFileSync(TEST_SET_PATH, 'utf-8'),
-);
+const testSet = JSON.parse(fs.readFileSync(TEST_SET_PATH, 'utf-8'));
+// Manually create the testDocs and testLabels arrays from the testSet
+const testDocs = testSet.map(d => d.text);
+const testLabels = testSet.map(d => d.label);
 
 // Load Model A (Scratch)
 const modelA = NaiveBayesClassifier.loadModel(NB_SCRATCH_PATH);
@@ -31,11 +30,11 @@ BaselineClassifier.loadModel(BASELINE_PATH)
     runEvaluation();
   })
   .catch((err) => {
-    console.error('Failed to load Model B:', err);
+    // This catch block might catch errors from runEvaluation() too
+    console.error('An error occurred during model loading or evaluation:', err);
   });
 
 // --- 2. Evaluation Metrics Helper ---
-// (This function is the same as before)
 function calculateMetrics(predictions, trueLabels) {
   let tp = 0; // Spam predicted as Spam (True Positive)
   let fp = 0; // Ham predicted as Spam (False Positive)
@@ -46,18 +45,18 @@ function calculateMetrics(predictions, trueLabels) {
   for (let i = 0; i < trueLabels.length; i++) {
     const pred = predictions[i];
     const actual = trueLabels[i];
-
+    
     if (actual === 'spam') {
       if (pred === 'spam') tp++;
       else fn++;
-    } else {
-      // actual === 'ham'
+    } else { // actual === 'ham'
       if (pred === 'spam') fp++;
       else tn++;
     }
 
     if (pred !== actual && misclassified.length < 10) {
       misclassified.push({
+        // Use the original testDocs array to get the text
         text: testDocs[i].substring(0, 80) + '...',
         predicted: pred,
         actual: actual,
@@ -76,22 +75,20 @@ function calculateMetrics(predictions, trueLabels) {
     precision,
     recall,
     f1,
-    // [NEW] We pass the raw numbers for easier printing
     confusion: { tp, fp, fn, tn },
     misclassified,
   };
 }
 
 // --- 3. Feature Insight Helper ---
-// (This function is the same as before)
 function getTopSpamTokens(classifier) {
   const spamLikelihoods = classifier.logLikelihoods.spam;
   const hamLikelihoods = classifier.logLikelihoods.ham;
   const spamminess = {};
 
   for (const token of classifier.vocabulary) {
-    spamminess[token] =
-      spamLikelihoods[token] - (hamLikelihoods[token] || -Infinity);
+    // Find words that are *much* more likely in spam than in ham
+    spamminess[token] = spamLikelihoods[token] - (hamLikelihoods[token] || -Infinity);
   }
 
   return Object.entries(spamminess)
@@ -101,14 +98,13 @@ function getTopSpamTokens(classifier) {
 }
 
 // --- 4. Main Evaluation Function ---
-// [UPDATED] This function now prints in a "human" format
 function runEvaluation() {
   if (!modelBLoaded) return;
 
   console.log(`Evaluating on ${testDocs.length} held-out test messages...`);
 
-  const predictionsA = testDocs.map((doc) => modelA.predict(doc).label);
-  const predictionsB = testDocs.map((doc) => modelB.predict(doc).label);
+  const predictionsA = testDocs.map(doc => modelA.predict(doc).label);
+  const predictionsB = testDocs.map(doc => modelB.predict(doc).label);
 
   const metricsA = calculateMetrics(predictionsA, testLabels);
   const metricsB = calculateMetrics(predictionsB, testLabels);
@@ -121,18 +117,11 @@ function runEvaluation() {
   console.log(`  - Recall:    ${metricsA.recall.toFixed(4)}`);
   console.log(`  - F1-Score:  ${metricsA.f1.toFixed(4)}`);
   console.log('Confusion Matrix:');
-  console.log(
-    `  - Correctly found spam (True Positives): ${metricsA.confusion.tp}`,
-  );
-  console.log(
-    `  - Incorrectly called ham 'spam' (False Positives): ${metricsA.confusion.fp}`,
-  );
-  console.log(
-    `  - Missed spam, called it 'ham' (False Negatives): ${metricsA.confusion.fn}`,
-  );
-  console.log(
-    `  - Correctly found ham (True Negatives): ${metricsA.confusion.tn}`,
-  );
+  console.log(`  - Correctly found spam (True Positives): ${metricsA.confusion.tp}`);
+  console.log(`  - Incorrectly called ham 'spam' (False Positives): ${metricsA.confusion.fp}`);
+  console.log(`  - Missed spam, called it 'ham' (False Negatives): ${metricsA.confusion.fn}`);
+  console.log(`  - Correctly found ham (True Negatives): ${metricsA.confusion.tn}`);
+
 
   console.log('\n--- Model B (Library Baseline) ---');
   console.log(`Overall Accuracy: ${(metricsB.accuracy * 100).toFixed(2)}%`);
@@ -141,26 +130,16 @@ function runEvaluation() {
   console.log(`  - Recall:    ${metricsB.recall.toFixed(4)}`);
   console.log(`  - F1-Score:  ${metricsB.f1.toFixed(4)}`);
   console.log('Confusion Matrix:');
-  console.log(
-    `  - Correctly found spam (True Positives): ${metricsB.confusion.tp}`,
-  );
-  console.log(
-    `  - Incorrectly called ham 'spam' (False Positives): ${metricsB.confusion.fp}`,
-  );
-  console.log(
-    `  - Missed spam, called it 'ham' (False Negatives): ${metricsB.confusion.fn}`,
-  );
-  console.log(
-    `  - Correctly found ham (True Negatives): ${metricsB.confusion.tn}`,
-  );
+  console.log(`  - Correctly found spam (True Positives): ${metricsB.confusion.tp}`);
+  console.log(`  - Incorrectly called ham 'spam' (False Positives): ${metricsB.confusion.fp}`);
+  console.log(`  - Missed spam, called it 'ham' (False Negatives): ${metricsB.confusion.fn}`);
+  console.log(`  - Correctly found ham (True Negatives): ${metricsB.confusion.tn}`);
 
   console.log('\n--- Misclassified Examples (Model A) ---');
   for (const item of metricsA.misclassified) {
-    console.log(
-      `  - Predicted: "${item.predicted}", Actual: "${item.actual}", Text: "${item.text}"`,
-    );
+    console.log(`  - Predicted: "${item.predicted}", Actual: "${item.actual}", Text: "${item.text}"`);
   }
-
+  
   console.log('\n--- Feature Insight (Top Spam Tokens) ---');
   const topSpamWords = getTopSpamTokens(modelA);
   console.log(`The words that most strongly predict spam are:`);
